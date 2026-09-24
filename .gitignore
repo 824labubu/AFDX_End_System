@@ -1,0 +1,7 @@
+*.bit
+*.bin
+*.log
+*.jou
+*.hsi
+/.Xil/
+elinx&.zip
