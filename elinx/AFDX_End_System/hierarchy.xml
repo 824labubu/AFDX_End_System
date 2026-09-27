@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--Product Version: eLinx v1.0.0.0-->
+<!--								-->
+<!--Copyright 2017-2024 eHiWay, Inc. All Rights Reserved.-->
+<Hierarchy>
+    <DesignSources>
+        <Node ModuleName="AFDX_End_System_top" PortName="clk,input_rst_n,rx_data[7:0],rx_ready,rx_valid,tx_data[7:0],tx_ready,tx_valid" PortSignal="input,input,input,input,input,output,output,output" ParameterName="" InstName="" IsIP="false" IsUserIP="false" EciPath="" IsBlockDesign="false" BlockDesignPath="" SyntaxError="true" FilePath="/AFDX_End_System.srcs/sources_1/new/AFDX_End_System_top.v"/>
+        <Node ModuleName="AFDX_TX" PortName="" PortSignal="" ParameterName="" InstName="" IsIP="false" IsUserIP="false" EciPath="" IsBlockDesign="false" BlockDesignPath="" SyntaxError="true" FilePath="/AFDX_End_System.srcs/sources_1/new/AFDX_TX.v"/>
+        <Node ModuleName="FIFO_AFDX" PortName="almost_empty,almost_full,clock,data[255:0],empty,full,q[255:0],rdreq,wrreq" PortSignal="output,output,input,input,output,output,output,input,input" ParameterName="" InstName="" IsIP="true" IsUserIP="false" EciPath="/AFDX_End_System.srcs/sources_1/ip/FIFO_AFDX/FIFO_AFDX.eci" IsBlockDesign="false" BlockDesignPath="" SyntaxError="true" FilePath="/AFDX_End_System.srcs/sources_1/ip/FIFO_AFDX/FIFO_AFDX.v">
+            <Child ModuleName="scfifo" InstName="scfifo" FilePath="" IsIP="true" EciPath="/AFDX_End_System.srcs/sources_1/ip/FIFO_AFDX/FIFO_AFDX.eci" IsBlockDesign="false" BlockDesignPath=""/>
+        </Node>
+        <Node ModuleName="FIFO_QUE" PortName="almost_empty,almost_full,clock,data[7:0],empty,full,q[7:0],rdreq,wrreq" PortSignal="output,output,input,input,output,output,output,input,input" ParameterName="" InstName="" IsIP="true" IsUserIP="false" EciPath="/AFDX_End_System.srcs/sources_1/ip/FIFO_QUE/FIFO_QUE.eci" IsBlockDesign="false" BlockDesignPath="" SyntaxError="true" FilePath="/AFDX_End_System.srcs/sources_1/ip/FIFO_QUE/FIFO_QUE.v">
+            <Child ModuleName="scfifo" InstName="scfifo" FilePath="" IsIP="true" EciPath="/AFDX_End_System.srcs/sources_1/ip/FIFO_QUE/FIFO_QUE.eci" IsBlockDesign="false" BlockDesignPath=""/>
+        </Node>
+        <MifHexFiles/>
+        <SyntaxErrorFiles>
+            <Item SyntaxErrorFilePath="/AFDX_End_System.srcs/sources_1/new/AFDX_TX.v"/>
+        </SyntaxErrorFiles>
+        <OtherFiles/>
+        <BlockDesignFiles/>
+    </DesignSources>
+    <SimulationSources>
+        <SimSet Name="sim_1">
+            <MifHexFiles/>
+            <SyntaxErrorFiles/>
+            <OtherFiles/>
+        </SimSet>
+    </SimulationSources>
+</Hierarchy>
