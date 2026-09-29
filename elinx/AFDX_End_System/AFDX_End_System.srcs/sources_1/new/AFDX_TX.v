@@ -19,7 +19,10 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module AFDX_TX(
+module AFDX_TX#(
+    parameter                                           ES1_USER_ID = 16'h01_01,
++   parameter                                           ES2_USER_ID = 16'h01_02
+)(
     input                                               clk,
     input                                               reset,
 
@@ -28,7 +31,11 @@ module AFDX_TX(
     output reg                                          tx_ready,
     input                                               tx_tlast,
     input [7:0]                                         tx_port,
-    
+
+    // Application layer signals 
+    input [15:0]                                        app_upd_src_port,
+    input [15:0]                                        app_upd_dst_port,
+
     //MACA_GMII_PHY
     output                                              mdc_a,//PHY管理数据时钟
     inout                                               mdio_a, //PHY管理数据I/O
@@ -119,7 +126,6 @@ module AFDX_TX(
     wire                                              tftp_empty;
     wire                                              tftp_full;
 
-
     //pad_bits
     reg [127:0]                                       pad_bits;
     
@@ -171,7 +177,7 @@ module AFDX_TX(
     reg [7:0]                                         vl_lut;
     reg [7:0]                                         vl_config_data;
     reg [7:0]                                         priority;
-    reg [15:0]                                         VL_id;
+    reg [15:0]                                        VL_id;
 
     reg [21:0]                                        send_start_time;
     reg [7:0]                                         sn;
@@ -292,28 +298,28 @@ module AFDX_TX(
         case(port)
             SAM:
             begin
-                src_udp = 16'h2710;
-                dst_udp = 16'h2710;//10000    
+                src_udp = app_upd_src_port;
+                dst_udp = app_upd_dst_port;//10000    
             end
             QUE:
             begin
-                src_udp = 16'h2AF8;
-                dst_udp = 16'h2AF8;//11000
+                src_udp = app_upd_src_port;
+                dst_udp = app_upd_dst_port
             end
             SAP_SNMP:
             begin
-                src_udp = 16'h00A1;//161
-                dst_udp = 16'h00A1;
+                src_udp = app_upd_src_port;//161
+                dst_udp = app_upd_dst_port;
             end
             SAP_RTC:
             begin
-                src_udp = 16'h4E20;//20000
-                dst_udp = 16'h4E20;
+                src_udp = app_upd_src_port;//20000
+                dst_udp = app_upd_dst_port;
             end
             SAP_615A://问题一：请求一次 数据一次
             begin
-                src_udp = 16'hAFC8;//45000
-                dst_udp = 16'h0045;//69
+                src_udp = app_upd_src_port;//45000
+                dst_udp = app_upd_dst_port;//69
             end
         endcase
 
@@ -348,28 +354,28 @@ module AFDX_TX(
         case(port)
             SAM:
             begin
-                src_ip = 32'h0A_01_01_01;//设备ID: ES1 0X_0101 ES2: 0X_0102
-                dst_ip = {16'hF4_F4,VL_id};//多播IP 标识VL
+                src_ip = {8'h0A,ES1_USER_ID,SAM};//设备ID: ES1 0X_0101 ES2: 0X_0102
+                dst_ip = {24'hF4_F4,VL_id};//多播IP 标识VL
             end
             QUE:
             begin
-                src_ip = 32'h0A_01_01_02;
-                dst_ip = 32'h0A_01_02_02;
+                src_ip = {8'h0A,ES1_USER_ID,QUE};
+                dst_ip = {8'h0A,ES2_USER_ID,QUE};
             end
             SAP_SNMP:
             begin
-                src_ip = 32'h0A_01_01_03;
-                dst_ip = 32'h0A_01_02_03;
+                src_ip = {8'h0A,ES1_USER_ID,SAP_SNMP};
+                dst_ip = {8'h0A,ES2_USER_ID,SAP_SNMP};
             end
             SAP_RTC:
             begin
-                src_ip = 32'h0A_01_01_04;
-                dst_ip = 32'h0A_01_02_04;
+                src_ip = {8'h0A,ES1_USER_ID,SAP_RTC};
+                dst_ip = {8'h0A,ES2_USER_ID,SAP_RTC};
             end
             SAP_615A:
             begin
-                src_ip = 32'h0A_01_01_05;
-                dst_ip = 32'h0A_01_02_05;//问题三：可能会出现VL标识 ip地址可能为多播
+                src_ip = {8'h0A,ES1_USER_ID,SAP_615A};
+                dst_ip = {8'h0A,ES2_USER_ID,SAP_615A};
             end
         endcase
     end
