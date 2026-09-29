@@ -1,3 +1,10 @@
+FIFO_SAM, input, clock
+FIFO_SAM, input, data
+FIFO_SAM, input, rdreq
+FIFO_SAM, input, wrreq
+FIFO_SAM, output, empty
+FIFO_SAM, output, full
+FIFO_SAM, output, q
 VL_LUT, input, clock
 VL_LUT, input, data
 VL_LUT, input, rdaddress

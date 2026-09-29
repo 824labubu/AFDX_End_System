@@ -16,6 +16,7 @@
             <File Path="/AFDX_End_System.srcs/sources_1/ip/FIFO_QUE/FIFO_QUE.eci"/>
             <File Path="/AFDX_End_System.srcs/sources_1/ip/FIFO_AFDX/FIFO_AFDX.eci"/>
             <File Path="/AFDX_End_System.srcs/sources_1/ip/VL_LUT/VL_LUT.eci"/>
+            <File Path="/AFDX_End_System.srcs/sources_1/ip/FIFO_SAM/FIFO_SAM.eci"/>
         </FileSet>
         <FileSet Name="constrs_1" Type="Constrs" RelSrcDir="$PSRCDIR/constrs_1">
             <File Path="/AFDX_End_System.srcs/constrs_1/new/AFDX_End_System.edc"/>

@@ -25,8 +25,10 @@ module AFDX_TX(
 
     input [7:0]                                         tx_data,
     input                                               tx_valid,
-    input                                               tx_ready,
-
+    output reg                                          tx_ready,
+    input                                               tx_tlast,
+    input [7:0]                                         tx_port,
+    
     //MACA_GMII_PHY
     output                                              mdc_a,//PHY管理数据时钟
     inout                                               mdio_a, //PHY管理数据I/O
@@ -77,15 +79,46 @@ module AFDX_TX(
     reg [47:0]                                        dst_mac_b;
 
     //fifo_que define
-    wire                                              almost_full;
-    wire                                              almost_empty;
-    wire                                              empty;
-    wire                                              full; 
-    wire [7:0]                                        q;
+    wire                                              que_almost_full;
+    wire                                              que_almost_empty;
+    wire                                              que_empty;
+    wire                                              que_full; 
+    wire [7:0]                                        que_q;
     wire [7:0]                                        que_data;
     
     //sam port define
     wire [7:0]                                        sam_data;
+    wire                                              sam_almost_full;
+    wire                                              sam_almost_empty;
+    wire                                              sam_empty;
+    wire                                              sam_full;
+    wire [7:0]                                        sam_q;
+
+
+    //sap_snmp define
+    wire [7:0]                                        sap_snmp_data;
+    wire [7:0]                                        snmp_q;
+    wire                                              snmp_almost_full;
+    wire                                              snmp_almost_empty;
+    wire                                              snmp_empty;
+    wire                                              snmp_full;
+
+    //sap_rtc define
+    wire [7:0]                                        sap_rtc_data;
+    wire [7:0]                                        rtc_q;
+    wire                                              rtc_almost_full;
+    wire                                              rtc_almost_empty;
+    wire                                              rtc_empty;
+    wire                                              rtc_full;
+    
+    //sap_615a define
+    wire [7:0]                                        sap_615a_data; 
+    wire [7:0]                                        tftp_q;
+    wire                                              tftp_almost_full;
+    wire                                              tftp_almost_empty;
+    wire                                              tftp_empty;
+    wire                                              tftp_full;
+
 
     //pad_bits
     reg [127:0]                                       pad_bits;
@@ -132,17 +165,31 @@ module AFDX_TX(
 
     //VL_LUT define
     reg [4:0]                                         wraddress;
+    reg [4:0]                                         rdaddress;
     reg                                               wren;
     reg [7:0]                                         vl_lut_data;
     reg [7:0]                                         vl_lut;
     reg [7:0]                                         vl_config_data;
+    reg [7:0]                                         priority;
+    reg [15:0]                                         VL_id;
 
-    reg [19:0]                                        send_start_time;
+    reg [21:0]                                        send_start_time;
     reg [7:0]                                         sn;
     reg [479:0]                                       data_sn_etherneth_iph_udph;
 
     wire [7:0]                                        port_sel;
-    assign port_sel = src_ip[7:0];
+    assign port_sel = tx_port;
+
+    //tx_ready 
+    always@(posedge clk or negedge reset)
+    begin
+        if (!reset)
+            tx_ready <= 1'b0;
+        else if (~que_full || ~sam_full || ~sap_snmp_full || ~sap_rtc_full || ~sap_615a_full)
+            tx_ready <= 1'b1;
+        else
+            tx_ready <= 1'b0;
+    end
 
     //PORT Selection
     always@(*)
@@ -165,27 +212,67 @@ module AFDX_TX(
     FIFO_QUE fifo_que_inst (
 		.clock (clk),          //input    clock
 		.data (que_data),            //input    [7:0]    data
-		.rdreq (~empty)
-		.wrreq (~full),          //input    wrreq
-		.almost_empty (almost_empty),//output    almost_empty
-		.almost_full (almost_full),//output    almost_full
-		.empty (empty),          //output    empty
-		.full (full),            //output    full
-		.q (q)                   //output    [7:0]    q
+		.rdreq (~que_empty)
+		.wrreq (tx_valid && tx_ready && port == QUE),          //input    wrreq
+		.almost_empty (que_almost_empty),//output    almost_empty
+		.almost_full (que_almost_full),//output    almost_full
+		.empty (que_empty),          //output    empty
+		.full (que_full),            //output    full
+		.q (que_q)                   //output    [7:0]    q
     );
 
     //-------------------------------------SAM PORT-------------------------------------
     assign sam_data = (port == SAM) ? tx_data : 8'b0000_0000;
-    assign q = (port == SAM) ? tx_data : 8'b0000_0000;
+    FIFO_SAM fifo_sam_inst (
+		.clock (clk),          //input    clock
+		.data (sam_data),            //input    [7:0]    data
+		.rdreq (~sam_empty)
+		.wrreq (tx_valid && tx_ready && port == SAM),          //input    wrreq
+		.empty (sam_empty),          //output    empty
+		.full (sam_full),            //output    full
+		.q (sam_q)                   //output    [7:0]    q
+    );
 
     //-------------------------------------SAP_SNMP PPORT-------------------------------
     assign sap_snmp_data = (port == SAP_SNMP) ? tx_data : 8'b0000_0000;
     assign sap_rtc_data = (port == SAP_RTC) ? tx_data : 8'b0000_0000;
     assign sap_615a_data = (port == SAP_615A) ? tx_data : 8'b0000_0000;
 
-    assign q = (port == SAP_SNMP) ? tx_data : 8'b0000_0000;
-    assign q = (port == SAP_RTC) ? tx_data : 8'b0000_0000;
-    assign q = (port == SAP_615A) ? tx_data : 8'b0000_0000;
+    FIFO_QUE fifo_sap_snmp (
+		.clock (clk),          //input    clock
+		.data (sap_snmp_data),            //input    [7:0]    data
+		.rdreq (~snmp_empty),          //input    rdreq
+		.wrreq (tx_valid && tx_ready && port == SAP_SNMP),          //input    wrreq
+		.almost_empty (snmp_almost_empty),//output    almost_empty
+		.almost_full (snmp_almost_full),//output    almost_full
+		.empty (snmp_empty),          //output    empty
+		.full (snmp_full),            //output    full
+		.q (snmp_q)                   //output    [7:0]    q
+    );
+
+    FIFO_QUE fifo_sap_rtc (
+		.clock (clk),          //input    clock
+		.data (sap_rtc_data),            //input    [7:0]    data
+		.rdreq (~rtc_empty),          //input    rdreq
+		.wrreq (tx_valid && tx_ready && port == SAP_RTC),          //input    wrreq
+		.almost_empty (rtc_almost_empty),//output    almost_empty
+		.almost_full (rtc_almost_full),//output    almost_full
+		.empty (rtc_empty),          //output    empty
+		.full (rtc_full),            //output    full
+        .q (rtc_q)                   //output    [7:0]    q
+    );
+
+    FIFO_QUE fifo_sap_615a (
+		.clock (clk),          //input    clock
+		.data (sap_615a_data),            //input    [7:0]    data
+		.rdreq (~tftp_empty),          //input    rdreq
+		.wrreq (tx_valid && tx_ready && port == SAP_615A),          //input    wrreq
+		.almost_empty (tftp_almost_empty),//output    almost_empty
+		.almost_full (tftp_almost_full),//output    almost_full
+		.empty (tftp_empty),          //output    empty
+		.full (tftp_full),            //output    full
+        .q (tftp_q)                   //output    [7:0]    q
+    );
 
 
     //pad_bits function
@@ -262,7 +349,7 @@ module AFDX_TX(
             SAM:
             begin
                 src_ip = 32'h0A_01_01_01;//设备ID: ES1 0X_0101 ES2: 0X_0102
-                dst_ip = 32'hF4_F4_00_01;//多播IP 标识VL
+                dst_ip = {16'hF4_F4,VL_id};//多播IP 标识VL
             end
             QUE:
             begin
@@ -300,7 +387,7 @@ module AFDX_TX(
         else begin
             ip_version <= 4'h4;
             ip_header_len <= 4'h5;
-            ip_tos <= 16'h0000;
+            ip_tos <= 8'h00;
             ip_total_len <= udp_payload_len + 20;
             ip_ttl <= 8'h01;
             ip_protocol <= 8'h11; //udp
@@ -375,8 +462,10 @@ module AFDX_TX(
     always@(*)begin
         if(iph_checksum[16] == 1'b1)begin
             iph_checksum = iph_checksum[15:0] + 1;
+            iph_checksum = ~iph_checksum[15:0];
         end
     end
+    
 
     always@(posedge clk or negedge reset)begin
         if(~reset)
@@ -392,15 +481,15 @@ module AFDX_TX(
                     begin
                         src_mac_a = 48'h02_00_00_01_01_20;
                         src_mac_b = 48'h02_00_00_01_01_40;
-                        dst_mac_a = 48'h03_00_00_00_00_01;
-                        dst_mac_b = 48'h03_00_00_00_00_01;
+                        dst_mac_a = {32'h03_00_00_00,VL_id};
+                        dst_mac_b = {32'h03_00_00_00,VL_id};
                     end 
             16'h0102:
                     begin
                         src_mac_a = 48'h02_00_00_01_02_20;
                         src_mac_b = 48'h02_00_00_01_02_40;
-                        dst_mac_a = 48'h03_00_00_00_00_01;
-                        dst_mac_b = 48'h03_00_00_00_00_01;
+                        dst_mac_a = {48'h03_00_00_00,VL_id};
+                        dst_mac_b = {32'h03_00_00_00,VL_id};
                     end 
             default: begin
                         src_mac_a = 48'h02_00_00_00_00_20;
@@ -428,7 +517,7 @@ module AFDX_TX(
 		.clock (clk),          //input    clock
 		.data (eth_iph_udph_data[255:0]),            //input    [255:0]    data
 		.rdreq (~afdx0_empty),          //input    rdreq
-		.wrreq (~afdx0_full),          //input    wrreq
+		.wrreq (tx_ready && tx_valid),          //input    wrreq
 		.almost_empty (afdx0_almost_empty),
 		.almost_full (afdx0_almost_full),//output    almost_full
 		.empty (afdx0_empty),          //output    empty
@@ -438,9 +527,9 @@ module AFDX_TX(
 
     FIFO_AFDX fifo_que_afdx1(
 		.clock (clk),          //input    clock
-		.data (eth_iph_udph_data[472:256]),            //input    [255:0]    data
+		.data ({40'h0,eth_iph_udph_data[471:256]}),            //input    [255:0]    data
 		.rdreq (~afdx1_empty),          //input    rdreq
-		.wrreq (~afdx1_full),          //input    wrreq
+		.wrreq (tx_ready && tx_valid),          //input    wrreq
 		.almost_empty (afdx1_almost_empty),
 		.almost_full (afdx1_almost_full),//output    almost_full
 		.empty (afdx1_empty),          //output    empty
@@ -452,135 +541,132 @@ module AFDX_TX(
     //VL_BAG_config
     always@(*)begin
         case(dst_mac_a[15:0])
-            16'h0001:VLID = 9'd1;
-            16'h0002:VLID = 9'd2;
-            16'h0003:VLID = 9'd3;
-            16'h0004:VLID = 9'd4;
-            16'h0005:VLID = 9'd5;
-            16'h0006:VLID = 9'd6;
-            16'h0007:VLID = 9'd7;
-            16'h0008:VLID = 9'd8;
-            16'h0009:VLID = 9'd9;
-            16'h000a:VLID = 9'd10;
-            16'h000b:VLID = 9'd11;
-            16'h000c:VLID = 9'd12;
-            16'h000d:VLID = 9'd13;
-            16'h000e:VLID = 9'd14;
-            16'h000f:VLID = 9'd15;
-            16'h0010:VLID = 9'd16;
-            16'h0011:VLID = 9'd17;
-            16'h0012:VLID = 9'd18;
-            16'h0013:VLID = 9'd19;
-            16'h0014:VLID = 9'd20;
-            16'h0015:VLID = 9'd21;
-            16'h0016:VLID = 9'd22;
-            16'h0017:VLID = 9'd23;
-            16'h0018:VLID = 9'd24;
-            16'h0019:VLID = 9'd25;  
-            16'h001a:VLID = 9'd26;
-            16'h001b:VLID = 9'd27;
-            16'h001c:VLID = 9'd28;
-            16'h001d:VLID = 9'd29;
-            16'h001e:VLID = 9'd30;
-            16'h001f:VLID = 9'd31;
-            16'h0020:VLID = 9'd32;
-            16'h0021:VLID = 9'd33;
-            16'h0022:VLID = 9'd34;
-            16'h0023:VLID = 9'd35;
-            16'h0024:VLID = 9'd36;
-            16'h0025:VLID = 9'd37;
-            16'h0026:VLID = 9'd38;
-            16'h0027:VLID = 9'd39;
-            16'h0028:VLID = 9'd40;
-            16'h0029:VLID = 9'd41;
-            16'h002a:VLID = 9'd42;
-            16'h002b:VLID = 9'd43;
-            16'h002c:VLID = 9'd44;
-            16'h002d:VLID = 9'd45;
-            16'h002e:VLID = 9'd46;
-            16'h002f:VLID = 9'd47;
-            16'h0030:VLID = 9'd48;
-            16'h0031:VLID = 9'd49;
-            16'h0032:VLID = 9'd50;
-            16'h0033:VLID = 9'd51;
-            16'h0034:VLID = 9'd52;
-            16'h0035:VLID = 9'd53;
-            16'h0036:VLID = 9'd54;
-            16'h0037:VLID = 9'd55;
-            16'h0038:VLID = 9'd56;
-            16'h0039:VLID = 9'd57;
-            16'h003a:VLID = 9'd58;
-            16'h003b:VLID = 9'd59;
-            16'h003c:VLID = 9'd60;
-            16'h003d:VLID = 9'd61;
-            16'h003e:VLID = 9'd62;
-            16'h003f:VLID = 9'd63;
-            16'h0040:VLID = 9'd64;
-            16'h0041:VLID = 9'd65;
-            16'h0042:VLID = 9'd66;
-            16'h0043:VLID = 9'd67;
-            16'h0044:VLID = 9'd68;
-            16'h0045:VLID = 9'd69;
-            16'h0046:VLID = 9'd70;
-            16'h0047:VLID = 9'd71;
-            16'h0048:VLID = 9'd72;
-            16'h0049:VLID = 9'd73;
-            16'h004a:VLID = 9'd74;
-            16'h004b:VLID = 9'd75;
-            16'h004c:VLID = 9'd76;
-            16'h004d:VLID = 9'd77;
-            16'h004e:VLID = 9'd78;
-            16'h004f:VLID = 9'd79;
-            16'h0050:VLID = 9'd80;
-            16'h0051:VLID = 9'd81;
-            16'h0052:VLID = 9'd82;
-            16'h0053:VLID = 9'd83;
-            16'h0054:VLID = 9'd84;
-            16'h0055:VLID = 9'd85;
-            16'h0056:VLID = 9'd86;
-            16'h0057:VLID = 9'd87;
-            16'h0058:VLID = 9'd88;
-            16'h0059:VLID = 9'd89;
-            16'h005a:VLID = 9'd90;
-            16'h005b:VLID = 9'd91;
-            16'h005c:VLID = 9'd92;
-            16'h005d:VLID = 9'd93;
-            16'h005e:VLID = 9'd94;
-            16'h005f:VLID = 9'd95;
-            16'h0060:VLID = 9'd96;
-            16'h0061:VLID = 9'd97;
-            16'h0062:VLID = 9'd98;
-            16'h0063:VLID = 9'd99;
-            16'h0064:VLID = 9'd100;
-            16'h0065:VLID = 9'd101;
-            16'h0066:VLID = 9'd102;
-            16'h0067:VLID = 9'd103;
-            16'h0068:VLID = 9'd104;
-            16'h0069:VLID = 9'd105;
-            16'h006a:VLID = 9'd106;
-            16'h006b:VLID = 9'd107;
-            16'h006c:VLID = 9'd108;
-            16'h006d:VLID = 9'd109;
-            16'h006e:VLID = 9'd110;
-            16'h006f:VLID = 9'd111;
-            16'h0070:VLID = 9'd112;
-            16'h0071:VLID = 9'd113;
-            16'h0072:VLID = 9'd114;
-            16'h0073:VLID = 9'd115;
-            16'h0074:VLID = 9'd116;
-            16'h0075:VLID = 9'd117;
-            16'h0076:VLID = 9'd118;
-            16'h0077:VLID = 9'd119;
-            16'h0078:VLID = 9'd120;
-            16'h0079:VLID = 9'd121;
-            16'h007a:VLID = 9'd122;
-            16'h007b:VLID = 9'd123;
-            16'h007c:VLID = 9'd124;
-            16'h007d:VLID = 9'd125;
-            16'h007e:VLID = 9'd126;
-            16'h007f:VLID = 9'd127;
-            16'h0080:VLID = 9'd128;
-            default: VLID = 9'd0;
+            16'h0001:VL_id = 16'h00_01;
+            16'h0002:VL_id = 16'h00_02;
+            16'h0003:VL_id = 16'h00_03;
+            16'h0004:VL_id = 16'h00_04;
+            16'h0005:VL_id = 16'h00_05;
+            16'h0006:VL_id = 16'h00_06;
+            16'h0007:VL_id = 16'h00_07;
+            16'h0008:VL_id = 16'h00_08;
+            16'h0009:VL_id = 16'h00_09;
+            16'h000a:VL_id = 16'h00_0a;
+            16'h000b:VL_id = 16'h00_0b;
+            16'h000c:VL_id = 16'h00_0c;
+            16'h000d:VL_id = 16'h00_0d;
+            16'h000e:VL_id = 16'h00_0e;
+            16'h000f:VL_id = 16'h00_0f;
+            16'h0010:VL_id = 16'h00_10;
+            16'h0011:VL_id = 16'h00_11;
+            16'h0012:VL_id = 16'h00_12;
+            16'h0013:VL_id = 16'h00_13;
+            16'h0015:VL_id = 16'h00_15;
+            16'h0016:VL_id = 16'h00_16;
+            16'h0017:VL_id = 16'h00_17;
+            16'h0018:VL_id = 16'h00_18;
+            16'h0019:VL_id = 16'h00_19;
+            16'h001a:VL_id = 16'h00_1a;
+            16'h001b:VL_id = 16'h00_1b;
+            16'h001c:VL_id = 16'h00_1c;
+            16'h001e:VL_id = 16'h00_1e;
+            16'h001f:VL_id = 16'h00_1f;
+            16'h0020:VL_id = 16'h00_20;
+            16'h0021:VL_id = 16'h00_21;
+            16'h0022:VL_id = 16'h00_22;
+            16'h0023:VL_id = 16'h00_23;
+            16'h0024:VL_id = 16'h00_24;
+            16'h0025:VL_id = 16'h00_25;
+            16'h0026:VL_id = 16'h00_26;
+            16'h0027:VL_id = 16'h00_27;
+            16'h0028:VL_id = 16'h00_28;
+            16'h0029:VL_id = 16'h00_29;
+            16'h002a:VL_id = 16'h00_2a;
+            16'h002c:VL_id = 16'h00_2c;
+            16'h002d:VL_id = 16'h00_2d;
+            16'h002e:VL_id = 16'h00_2e;
+            16'h002f:VL_id = 16'h00_2f;
+            16'h0030:VL_id = 16'h00_30;
+            16'h0031:VL_id = 16'h00_31;
+            16'h0032:VL_id = 16'h00_32;
+            16'h0033:VL_id = 16'h00_33;
+            16'h0034:VL_id = 16'h00_34;
+            16'h0035:VL_id = 16'h00_35;
+            16'h0036:VL_id = 16'h00_36;
+            16'h0037:VL_id = 16'h00_37;
+            16'h0038:VL_id = 16'h00_38;
+            16'h0039:VL_id = 16'h00_39;
+            16'h003a:VL_id = 16'h00_3a;
+            16'h003b:VL_id = 16'h00_3b;
+            16'h003c:VL_id = 16'h00_3c;
+            16'h003d:VL_id = 16'h00_3d;
+            16'h003e:VL_id = 16'h00_3e;
+            16'h003f:VL_id = 16'h00_3f;
+            16'h0040:VL_id = 16'h00_40;
+            16'h0041:VL_id = 16'h00_41;
+            16'h0042:VL_id = 16'h00_42;
+            16'h0043:VL_id = 16'h00_43;
+            16'h0044:VL_id = 16'h00_44;
+            16'h0045:VL_id = 16'h00_45;
+            16'h0046:VL_id = 16'h00_46;
+            16'h0047:VL_id = 16'h00_47;
+            16'h0048:VL_id = 16'h00_48;
+            16'h0049:VL_id = 16'h00_49;
+            16'h004a:VL_id = 16'h00_4a;
+            16'h004b:VL_id = 16'h00_4b;
+            16'h004c:VL_id = 16'h00_4c;
+            16'h004d:VL_id = 16'h00_4d;
+            16'h004e:VL_id = 16'h00_4e;
+            16'h004f:VL_id = 16'h00_4f;
+            16'h0050:VL_id = 16'h00_50;
+            16'h0051:VL_id = 16'h00_51;
+            16'h0052:VL_id = 16'h00_52;
+            16'h0053:VL_id = 16'h00_53;
+            16'h0054:VL_id = 16'h00_54;
+            16'h0055:VL_id = 16'h00_55;
+            16'h0056:VL_id = 16'h00_56;
+            16'h0057:VL_id = 16'h00_57;
+            16'h0058:VL_id = 16'h00_58;
+            16'h0059:VL_id = 16'h00_59;
+            16'h005a:VL_id = 16'h00_5a;
+            16'h005b:VL_id = 16'h00_5b;
+            16'h005c:VL_id = 16'h00_5c;
+            16'h005d:VL_id = 16'h00_5d;
+            16'h005e:VL_id = 16'h00_5e;
+            16'h005f:VL_id = 16'h00_5f;
+            16'h0060:VL_id = 16'h00_60;
+            16'h0061:VL_id = 16'h00_61;
+            16'h0062:VL_id = 16'h00_62;
+            16'h0063:VL_id = 16'h00_63;
+            16'h0064:VL_id = 16'h00_64;
+            16'h0065:VL_id = 16'h00_65;
+            16'h0066:VL_id = 16'h00_66;
+            16'h0067:VL_id = 16'h00_67;
+            16'h0068:VL_id = 16'h00_68;
+            16'h0069:VL_id = 16'h00_69;
+            16'h006a:VL_id = 16'h00_6a;
+            16'h006b:VL_id = 16'h00_6b;
+            16'h006c:VL_id = 16'h00_6c;
+            16'h006d:VL_id = 16'h00_6d;
+            16'h006e:VL_id = 16'h00_6e;
+            16'h006f:VL_id = 16'h00_6f;
+            16'h0070:VL_id = 16'h00_70;
+            16'h0071:VL_id = 16'h00_71;
+            16'h0072:VL_id = 16'h00_72;
+            16'h0073:VL_id = 16'h00_73;
+            16'h0074:VL_id = 16'h00_74;
+            16'h0075:VL_id = 16'h00_75;
+            16'h0076:VL_id = 16'h00_76;
+            16'h0077:VL_id = 16'h00_77;
+            16'h0078:VL_id = 16'h00_78;
+            16'h0079:VL_id = 16'h00_79;
+            16'h007a:VL_id = 16'h00_7a;
+            16'h007b:VL_id = 16'h00_7b;
+            16'h007c:VL_id = 16'h00_7c;
+            16'h007d:VL_id = 16'h00_7d;
+            16'h007e:VL_id = 16'h00_7e;
+            16'h007f:VL_id = 16'h00_7f;
+            16'h0080:VL_id = 16'h00_80;
+            default: VL_id = 16'h00_00;
         endcase
     end
 
@@ -597,7 +683,7 @@ module AFDX_TX(
     always@(posedge clk or negedge reset)begin
         if(~reset)
             wren <= 'd0;
-        else if(wraddress > 5'd31)
+        else if(wraddress >= 5'd31)
             wren <= 'd0;
         else
             wren <= 'd1;
@@ -636,9 +722,11 @@ module AFDX_TX(
             8'h03: priority = 8'h03;
             8'h04: priority = 8'h04;
             8'h05: priority = 8'h05;
-            default: priorty = 8'h00;
+            default: priority = 8'h00;
         endcase
     end
+
+
 
     //VL_RP
     //vl_priority_adjust
@@ -677,7 +765,7 @@ module AFDX_TX(
             data_sn_etherneth_iph_udph <= 'd0;
         end
         else if((~afdx1_empty)||(~afdx0_empty))begin 
-            if(sn > 8'd256)begin
+            if(sn >= 8'd255)begin
                 sn <= 1'd1;
                 data_sn_etherneth_iph_udph <= {afdx1_data[215:0],afdx0_data,sn};
             end
