@@ -1,3 +1,9 @@
+VL_LUT, input, clock
+VL_LUT, input, data
+VL_LUT, input, rdaddress
+VL_LUT, input, wraddress
+VL_LUT, input, wren
+VL_LUT, output, q
 FIFO_AFDX, input, clock
 FIFO_AFDX, input, data
 FIFO_AFDX, input, rdreq
