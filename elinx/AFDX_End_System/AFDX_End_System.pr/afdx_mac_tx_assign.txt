@@ -1,0 +1,11 @@
+input_fire,tx_valid,tx_ready
+port_valid,tx_port,tx_port,VL_COUNT
+port_index,port_valid,tx_port
+p0_gtxc_a,p0_rxc_a
+p0_gtxc_b,p0_rxc_b
+phy_rstb0_a,reset
+phy_rstb0_b,reset
+src_mac_a,ES1_USER_ID
+src_mac_b,ES1_USER_ID
+crc_a_next,crc_a,frame_byte_a
+crc_b_next,crc_b,frame_byte_b,!reset,~crc_a_next,~crc_b_next,~frame_start_toggle
