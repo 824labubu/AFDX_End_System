@@ -1,0 +1,10 @@
+.venv/
+build/
+__pycache__/
+*.pyc
+results*.xml
+*.vcd
+*.fst
+*.wlf
+transcript
+modelsim.ini
