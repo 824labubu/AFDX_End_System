@@ -31,13 +31,15 @@ def sources_for(target):
             LEGACY_DIR / "afdx_mac_tx.v",
             LEGACY_DIR / "afdx_gmii_tx.v",
         ], "test_tx_mac_smoke", {"BAG_CYCLES": 16}
-    if target == "end-system":
+    if target in ("end-system", "tx-reference"):
         return "AFDX_End_System_top", [
             LEGACY_DIR / "AFDX_End_System_top.v",
             LEGACY_DIR / "AFDX_TX_MAC.v",
             LEGACY_DIR / "afdx_mac_tx.v",
             LEGACY_DIR / "afdx_gmii_tx.v",
-        ], "test_end_system_top", {"BAG_CYCLES": 16}  # TB_ONLY_DEFAULT
+        ], ("test_tx_reference_smoke" if target == "tx-reference" else "test_end_system_top"), {
+            "BAG_CYCLES": 16,  # TB_ONLY_DEFAULT; no BAG/jitter checker in V2
+        }
     return "AFDX_TX", [LEGACY_DIR / "AFDX_TX.v"], None, {}
 
 
@@ -150,11 +152,33 @@ def sv_smoke(args):
     print("PASS: independent SV smoke", flush=True)
 
 
+def model_units(args):
+    # Runs without importing cocotb or compiling RTL. sim is the working
+    # directory so the reference packages are importable without installation.
+    run_bounded([sys.executable, "-m", "unittest", "discover", "-s", "tests",
+                 "-p", "test_model_unit.py", "-v"], SIM_DIR, args.wall_timeout,
+                required_output="\nOK\n")
+    print("PASS: V2 pure Python model unit tests", flush=True)
+
+
+def run_targets(args, targets):
+    for target in targets:
+        command = [sys.executable, str(Path(__file__).resolve()), "--worker",
+                   "--sim", args.sim, "--target", target]
+        if args.waves:
+            command.append("--waves")
+        run_bounded(command, ROOT, args.wall_timeout)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sim", choices=("modelsim", "questa", "icarus", "verilator", "vcs"),
                         default="icarus")
-    parser.add_argument("--target", choices=("infrastructure", "tx-mac", "end-system", "legacy-tx"))
+    parser.add_argument("--target", choices=("infrastructure", "tx-mac", "end-system",
+                                            "tx-reference", "legacy-tx"))
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--model-unit", action="store_true", help="run pure Python V2 unit tests")
+    mode.add_argument("--v2", action="store_true", help="run model units, TX reference and full V1 smoke")
     parser.add_argument("--sv-smoke", action="store_true")
     parser.add_argument("--waves", action="store_true")
     parser.add_argument("--wall-timeout", type=int, default=180)
@@ -162,20 +186,25 @@ def main():
     args = parser.parse_args()
     if args.wall_timeout <= 0:
         parser.error("--wall-timeout must be positive")
+    if (args.model_unit or args.v2) and (args.target or args.sv_smoke or args.worker):
+        parser.error("--model-unit/--v2 cannot be combined with --target/--sv-smoke/--worker")
     try:
-        if args.sv_smoke:
+        if args.model_unit:
+            model_units(args)
+        elif args.v2:
+            model_units(args)
+            run_targets(args, ["tx-reference", "infrastructure", "tx-mac", "end-system"])
+            sv_smoke(args)
+            print(f"PASS: V2 reference and V1 regression on {args.sim}", flush=True)
+        elif args.sv_smoke:
             sv_smoke(args)
         elif args.worker:
             worker(args)
         else:
             targets = [args.target] if args.target else ["infrastructure", "tx-mac", "end-system"]
-            for target in targets:
-                command = [sys.executable, str(Path(__file__).resolve()), "--worker",
-                           "--sim", args.sim, "--target", target]
-                if args.waves:
-                    command.append("--waves")
-                run_bounded(command, ROOT, args.wall_timeout)
-            print(f"PASS: V1 smoke regression on {args.sim}", flush=True)
+            run_targets(args, targets)
+            label = "V2 TX reference smoke" if targets == ["tx-reference"] else "V1 smoke regression"
+            print(f"PASS: {label} on {args.sim}", flush=True)
     except (RuntimeError, OSError, SystemExit, subprocess.CalledProcessError) as exc:
         print(str(exc), file=sys.stderr)
         return 1

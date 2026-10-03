@@ -1,4 +1,4 @@
-# AFDX ES 验证环境 V1
+# AFDX ES 验证环境 V1 / V2
 
 需求依据为仓库中实际存在的
 [`doc/verification/AFDX_Verification_Plan.md`](../doc/verification/AFDX_Verification_Plan.md)。
@@ -13,6 +13,115 @@ GMII 完全复用 [cocotbext-eth](https://github.com/alexforencich/cocotbext-eth
 `app_tx_*` / `app_rx_*`，网络侧为双路 `gmii_*`。实际TX已连接，RX暂时保持空闲。
 接口说明见 [统一DUT接口](../doc/AFDX_End_System_Top_Interface.md)。
 `--target end-system` 运行此顶层，不把下面的基础设施回环当作真实RX。
+
+## V2 TX Reference 验证
+
+执行依据：项目根目录
+[`AFDX_Verification_V2_Execution_Guide.md`](../AFDX_Verification_V2_Execution_Guide.md)，
+按 Phase A → H 实施。状态与逐项 Exit Criteria 见 [V2_STATUS.md](V2_STATUS.md)。
+V2 建立独立 TX Reference Model、Packet Decoder 和 Basic Scoreboard，
+只对当前 `AFDX_End_System_top` 进行少量 TX 基础验证，RX保持stub。
+
+```sh
+# 无仿真器/第三方Python依赖的模型单元测试。
+python3 sim/run.py --model-unit
+# 也可直接运行纯Python测试。
+PYTHONPATH=sim python3 -m unittest discover -s sim/tests -p test_model_unit.py -v
+
+# 仅运行4类DUT-vs-Reference测试。
+sim/.venv/bin/python sim/run.py --sim icarus --target tx-reference
+
+# V2完整入口：纯Pythonunits → TX Reference → V1三个目标 → 独立SV smoke。
+sim/.venv/bin/python sim/run.py --sim icarus --v2
+```
+
+V2没有新增安装依赖；继续复用 `AppTransaction`、`AppSource/AppMonitor`、
+`AfdxTB`、cocotb和cocotbext-eth。默认不带`--v2`时仍运行原有V1目标。
+其他仿真器沿用`--target tx-reference`入口；本机验收为Icarus，不能据此声明ModelSim通过。
+
+### 模型、解析器与比较器
+
+```text
+AppTransaction + TxModelConfig + ReferenceState
+  → AfdxTxReferenceModel.build() → expected A / expected B
+
+AFDX_End_System_top → GmiiSink → get_payload(strip_fcs=False)
+  → decode_tx_frame() → actual fields
+
+TxScoreboard → 字段比较 + 原始字节比较 + 独立实际帧CRC/IP checksum检查
+```
+
+- `model/checksums.py`：独立CRC32与Internet/IPv4 checksum。
+- `model/builders.py`：UDP、IPv4、Ethernet分层编码。
+- `model/config.py`：集中配置，禁止从DUT或RTL推导expected。
+- `model/tx_reference.py`：按VL维护模型自己的SN，一条逻辑帧分配一次，分别编码A/B及FCS。
+- `decoder/tx_frame_decoder.py`：原始帧解析，无协议正确性assert；只检查可安全解析的字段边界。
+- `scoreboard/tx_scoreboard.py`：每网络FIFO匹配，检测字段不符、缺帧、多帧、错误顺序和TX_ER。
+- `tests/test_model_unit.py`：标准库unittest，无RTL或cocotb依赖；含独立字节样本和比较器失败路径自检。
+- `tests/test_tx_reference_smoke.py`：普通/1 B/1471 B/同VL连续两帧，共四项系统用例。
+
+CRC使用`binascii.crc32`参考实现，验证`123456789 → CBF43926`，没有复制RTL逐位CRC循环。
+数值CRC采用CRC-32/ISO-HDLC的反射约定，FCS四字节按little-endian追加。
+IPv4校验和先清零首部checksum字段，再计算16-bit one's-complement；
+检查已填首部使用`internet_checksum(header)==0`。参考来源：
+[Python binascii文档](https://docs.python.org/3/library/binascii.html)、
+[RFC 1071](https://www.rfc-editor.org/rfc/rfc1071.html)、
+[RFC 791](https://www.rfc-editor.org/rfc/rfc791.html)、
+[RFC 768](https://www.rfc-editor.org/rfc/rfc768.html)。
+
+模型/解析器之间共享结构类型，原始完整帧字节也必须匹配；单元测试另有独立固定编码样本，
+避免仅靠builder/decoder互相round-trip就判定正确。
+解析器可读取IHL定位UDP，不实现分片/重组；当前参考profile固定IPv4 IHL=5、未分片UDP。
+
+### 测试配置与帧边界
+
+`TB_ONLY_DEFAULT_MODEL_CONFIG`为测试配置，不冻结正式设备ICD或声明完整规范合规：
+
+| 配置 | V2测试值 |
+|---|---|
+| application port → VL | 1..5 → 1..5，显式路由表 |
+| 源IPv4 | 表中10.1.1.1..5 |
+| 目的IPv4 | port 1为244.244.0.1；其余为10.1.2.2..5 |
+| DA | 各路由表中03:00:00:00:00:01..05，A/B分别配置 |
+| SA A/B | 02:00:00:01:01:20 / 02:00:00:01:01:40 |
+| IPv4 | TOS=0、ID=0、DF=1、TTL=1、protocol=UDP |
+| UDP checksum策略 | 显式配置`zero`，不实现其他策略 |
+| Payload/帧上限 | 1471 B / 1518 B（DA到FCS） |
+| 最小长度/Pad | 60 B不含FCS；Pad=AA |
+| SN | 当前项目profile首帧1，255后回到1，按VL独立；不是完整规范复位行为的验收声明 |
+
+固定配置来自当前接口文档/项目配置基线，集中记录，不读RTL生成配置。
+若地址或SN规则后续冻结为其他值，应独立更新配置与规范记录，不依据Actual Frame自动学习。
+
+Reference输出及Decoder输入均为`DA..FCS`。
+固定版cocotbext-eth的`get_payload(strip_fcs=False)`基于SFD位置剥离前导码/SFD并保留FCS，
+不调用BFM的`check_fcs()`作为验收判据。SN是FCS前一字节，Pad位于IP数据结束与SN之间。
+UDP长度决定应用payload，IP长度决定Ethernet Pad边界，两者不一致不会被解析器自动修正。
+本阶段不验收前导码字节数或IFG；测试末尾的有限额外帧观察窗口也不是BAG/IFG checker。
+
+### 失败诊断与产物
+
+`sim/build/<simulator>/tx-reference/results.xml`给出四项cocotb结果。
+每个用例另有`<test_name>.scoreboard.json`，包含expected/observed/matched/pending计数、
+每次比较的原始expected/actual帧和field-level mismatch。
+诊断包含test name、transaction ID、协议、A/B、时间(ns)、帧长、首个差异字节和值。
+缺帧有有界timeout，多帧和顺序错误由网络队列检测。
+
+示例失败格式：
+
+```text
+TX FRAME MISMATCH
+test=... transaction=... network=A timestamp_ns=...
+protocol=Ethernet/IPv4/UDP/AFDX expected_length=64 actual_length=64
+field                    expected                           actual
+udp_length               0x18 (24)                          0x19 (25)
+...
+first_difference: byte_offset=39 expected=0x18 (24) actual=0x19 (25)
+```
+
+DUT mismatch首先保持测试失败，保存JSON与日志，再按DUT/model/config分类定位；
+不能改Reference去匹配观察到的错误输出。V2不修改协议RTL，不扩展RX、应用peer、
+BAG/jitter、复杂调度器、完整fault injection或coverage closure。
 
 ## 文件组织
 
@@ -121,7 +230,8 @@ SV 路径同时要求成功退出和 TB 的 PASS 标记，不能把无测试输�
 回环比较仅是 BFM 连通性检查；由第三方 BFM 生成 FCS，不执行独立 CRC checker。
 `GmiiSink` 对前导码的采样行为由第三方库定义，因此回环比较使用库提供的
 `get_payload(strip_fcs=False)`，不将本测试当作前导码/SFD 协议验收。
-实际 TX smoke 仅检查收帧和接口，不解码或比较 Ethernet/IP/UDP/AFDX 字段。
+旧 `tx-mac` smoke仅检查收帧和接口；`end-system`含少量定向字段检查，
+独立模型、Decoder、Scoreboard检查使用V2的`tx-reference`目标。
 
 ## 当前阻塞和验证边界
 
@@ -144,6 +254,6 @@ SV 路径同时要求成功退出和 TB 的 PASS 标记，不能把无测试输�
 
 所有测试数值配置均为 `TB_ONLY_DEFAULT`，未冻结正式Port/VL/IP/MAC/BAG或系统时钟。
 统一顶层TX/RX流接口契约已定义，真实RX实现仍待完成。
-统一顶层追加了少量帧字段和CRC定向检查；仍未实现完整协议模型、packet decoder、
-IP checksum checker、BAG/jitter、SN/VL checker、应用 peer、完整 fault injection、
-functional coverage 或完整 scoreboard。
+V2已提供基本TX Reference Model、packet decoder、CRC/IP checksum及字段Scoreboard；
+仍未实现BAG/jitter、完整SN/VL系统回归、应用peer、完整fault injection、
+functional coverage或完整系统scoreboard。
