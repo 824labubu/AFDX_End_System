@@ -1,10 +1,10 @@
 # AFDX ES Verification Plan
 
-**Document Version**: v0.1  
+**Document Version**: v0.2
 **Status**: Verification Baseline  
-**Scope**: AFDX ES RTL v1  
-**Phase**: V0 — Test Plan  
-**Last Updated**: 2026-10-01  
+**Scope**: Current AFDX ES RTL
+**Current Focus**: TX Feature Verification (RX/E2E deferred)
+**Last Updated**: 2026-10-03
 
 ---
 
@@ -17,7 +17,7 @@
 后续文档职责划分如下：
 
 ```text
-docs/verification/AFDX_Verification_Plan.md
+doc/verification/AFDX_Verification_Plan.md
         ↓
 定义“验证什么”
 
@@ -272,6 +272,13 @@ SN达到最大值：
 ```
 
 异常情况下不得错误增加其他 VL 的 SN。
+
+---
+
+## TX-F07 REMOVED
+
+状态：**Removed**。当前不实现 `frame_interval >= BAG` 或 start-to-start BAG checker。
+完整 BAG/jitter/调度分析留待独立后续阶段；TX-F08～TX-F11 的编号保持不变。
 
 ---
 
@@ -801,7 +808,7 @@ SN独立递增
 最小Payload
 ```
 
-V0 阶段不要求确定具体 VL 数量和最终 Port → VL 映射。
+计划允许保留具体VL数量和最终Port → VL映射为TBD；定向TX测试使用显式临时配置。
 
 ---
 
@@ -835,8 +842,11 @@ RTC × duplicate sequence
 
 MAX_PAYLOAD × backpressure
 
-same VL × traffic shaping
-different VL × scheduler interaction
+port/VL × sequence
+padding × payload length
+network × FCS
+
+完整traffic shaping/scheduler coverage为后续阶段，当前不包含BAG交叉覆盖。
 
 A error × B valid
 B error × A valid
@@ -893,10 +903,10 @@ IP
 UDP
 SN
 FCS
-BAG
+IFG（GMII周期）
 ```
 
-对应检查项。
+对应检查项。当前不输出或检查BAG间隔。
 
 ---
 
@@ -946,11 +956,11 @@ TIMEOUT = FAIL
 
 | Item | Status | Impact |
 |---|---|---|
-| RX `valid/ready/last` contract | TBD | V3 |
-| RX Packet Buffer 行为 | TBD | V3 |
-| RX Dispatcher 最终接口 | TBD | V3 |
-| Communication Port → VL mapping | TBD | V2 / V3 |
-| A/B RX redundancy policy | TBD | V3 / V4 |
+| RX `valid/ready/last` contract | Defined by unified top; RX remains stub | RX后续阶段 |
+| RX Packet Buffer 行为 | TBD | RX后续阶段 |
+| RX Dispatcher 最终接口 | TBD | RX后续阶段 |
+| Communication Port → VL mapping | TB_ONLY_DEFAULT; production TBD | TX Reference / Coverage |
+| A/B RX redundancy policy | TBD | 后续RX验证 |
 | 最终 VL 配置 | TBD | Coverage |
 | 最终 BAG 配置 | TBD | Timing |
 | 最终系统时钟参数 | TBD | Timing |
@@ -969,22 +979,26 @@ TB_ONLY_DEFAULT
 
 # 21. 验证追踪表
 
-该表在 V1 之后持续维护。
+该表持续维护。执行记录、精确testcase和coverage见 `sim/STATUS.md`；Linux使用Icarus，ModelSim为team golden PENDING。
+当前执行TX-F01～F06、TX-F08～F11、RED-F01/02；其他功能保留后续范围。
+2026-10-03：Icarus完整回归PASS，TX Feature 19项测试/770个A/B帧、functional coverage 87/87；
+TX-F07为Removed，不存在BAG间隔checker。全部Pass状态仅针对TB_ONLY_DEFAULT项目profile，非完整ARINC/板级验收。
 
 | Feature ID | Test Case | Checker | Coverage | Status |
 |---|---|---|---|---|
-| TX-F01 | `tx_payload_basic` | TX Scoreboard | Payload Length | Planned |
-| TX-F02 | `tx_message_boundary` | Stream Checker | last/backpressure | Planned |
-| TX-F03 | `tx_udp_header` | UDP Checker | UDP fields | Planned |
-| TX-F04 | `tx_ipv4_header` | IPv4 Checker | IP fields/checksum | Planned |
-| TX-F05 | `tx_eth_header` | Ethernet Checker | MAC/EtherType | Planned |
-| TX-F06 | `tx_sn_sequence` | SN Checker | VL × wrap | Planned |
-| TX-F08 | `tx_padding` | Ethernet Checker | short payload | Planned |
-| TX-F09 | `tx_fcs` | CRC32 Reference | A/B FCS | Planned |
-| TX-F10 | `tx_preamble_sfd` | GMII Monitor | Preamble/SFD | Planned |
-| TX-F11 | `tx_ifg` | GMII Timing Checker | IFG | Planned |
-| RED-F01 | `tx_dual_network` | A/B Scoreboard | A/B | Planned |
-| RED-F02 | `tx_ab_consistency` | A/B Scoreboard | payload/SN | Planned |
+| TX-F01 | `test_tx_f01_*` | TX Scoreboard + App Monitor | length/flow | Pass |
+| TX-F02 | `test_tx_f02_*` | StreamAssertions + Scoreboard | last/gap/stall/back-to-back | Pass |
+| TX-F03 | `test_tx_f03_*` | UDP fields | ports/length/checksum | Pass |
+| TX-F04 | `test_tx_f04_*` | IP fields/checksum | all routes/length | Pass |
+| TX-F05 | `test_tx_f05_*` | Ethernet fields | all port/VL routes | Pass |
+| TX-F06 | `test_tx_f06_*` | ReferenceState/Scoreboard | increment/multi-VL/wrap/reset | Pass |
+| TX-F07 | `—` | 禁止frame_interval >= BAG checker | — | Removed |
+| TX-F08 | `test_tx_f08_*` | padding fields | short/boundary±1 | Pass |
+| TX-F09 | `test_tx_f09_*` | independent CRC32 | A/B × FCS | Pass |
+| TX-F10 | `test_tx_f10_*` | GMII passive observer | 7 × 55 / D5 | Pass |
+| TX-F11 | `test_tx_f11_*` | GMII idle-cycle checker | A/B IFG | Pass |
+| RED-F01 | `test_red_f01_*` | A/B Scoreboard | both networks | Pass |
+| RED-F02 | `test_red_f02_*` | semantic A/B field comparison | IP/UDP/payload/SN | Pass |
 | APP-F01 | Existing SNMP GET TB | SNMP Checker | GET/OID | Existing |
 | APP-F02 | Existing SNMP SET TB | SNMP Checker | SET/error | Existing |
 | APP-F04 | Existing RTC TB | RTC Checker | SYNC | Existing |
@@ -1004,6 +1018,8 @@ Pass
 Fail
 Blocked
 Existing
+Removed
+BLOCKED_BY_DUT_DEFECT
 ```
 
 ---
@@ -1021,7 +1037,7 @@ Ethernet framing
 FCS
 GMII TX
 A/B TX
-BAG
+GMII IFG
 Sequence Number
 ```
 
@@ -1037,13 +1053,13 @@ Communication Port → VL最终映射
 A/B RX冗余管理策略
 ```
 
-这些未冻结项不得阻塞 V1～V3 验证环境开发。
+这些未冻结项不得阻塞公共基础设施与TX验证环境开发。
 
 ---
 
-# 24. V0 Exit Criteria
+# 24. 验证计划完整性要求
 
-V0 完成需要满足：
+验证计划应满足：
 
 1. 所有待验证功能均拥有唯一 Feature ID；
 2. 每个 Feature 明确 Stimulus、Expected Behavior 和 Checker；
@@ -1054,24 +1070,12 @@ V0 完成需要满足：
 7. Verification Traceability Table 已建立；
 8. 后续验证不依赖人工查看波形作为主要判定手段。
 
-满足以上条件后，V0 结束。
+这些条件为持续维护验证计划的要求。
 
 ---
 
-# 25. 下一阶段
+# 25. 后续范围
 
-进入：
-
-```text
-V1 — Verification Infrastructure
-
-Transaction
-+
-Driver
-+
-Monitor
-+
-GMII BFM
-```
-
-V1 只负责搭建公共验证基础设施，不修改 DUT 协议功能。
+当前公共验证基础设施、独立TX模型与TX功能测试已完成，运行入口按功能组织。
+RX仍为stub。真实RX、应用E2E、fault campaign和完整BAG/jitter验证留作独立后续工作；
+不因当前TX验收通过自动扩展范围，也不自动修改协议RTL。

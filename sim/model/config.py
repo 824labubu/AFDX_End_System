@@ -36,7 +36,7 @@ class PortConfig:
             if not 0 <= getattr(self, name) < (1 << bits):
                 raise ValueError(f"{name} must fit {bits} bits")
         if set(self.networks) != {"a", "b"}:
-            raise ValueError("V2 dual-network profile requires independent A and B configuration")
+            raise ValueError("Dual-network profile requires independent A and B configuration")
         object.__setattr__(self, "networks", MappingProxyType(dict(self.networks)))
 
 
@@ -66,9 +66,9 @@ class TxModelConfig:
         if not 0 <= self.pad_byte <= 255:
             raise ValueError("pad_byte must fit one byte")
         if self.udp_checksum_mode != "zero":
-            raise ValueError("V2 only models the configured zero UDP checksum profile")
+            raise ValueError("Reference only models the configured zero UDP checksum profile")
         if not 1 <= self.sequence_first <= self.sequence_last <= 255:
-            raise ValueError("V2 project sequence range must be within 1..255")
+            raise ValueError("Project sequence range must be within 1..255")
         object.__setattr__(self, "ports", MappingProxyType(dict(self.ports)))
 
 

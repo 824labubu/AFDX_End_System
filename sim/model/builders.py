@@ -25,7 +25,7 @@ def build_udp(payload: bytes, src_port: int, dst_port: int, *, checksum_mode: st
                         ("udp_length", UDP_HEADER_BYTES + len(payload))):
         _unsigned(name, value, 16)
     if checksum_mode != "zero":
-        raise ValueError("V2 project profile only supports explicit UDP checksum_mode='zero'")
+        raise ValueError("Project profile only supports explicit UDP checksum_mode='zero'")
     return struct.pack("!HHHH", src_port, dst_port, UDP_HEADER_BYTES + len(payload), 0) + payload
 
 

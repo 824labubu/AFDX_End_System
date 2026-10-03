@@ -1,4 +1,4 @@
-"""V2 reference infrastructure unit tests; standard-library unittest, no RTL."""
+"""Reference infrastructure unit tests; standard-library unittest, no RTL."""
 
 import unittest
 from dataclasses import replace

@@ -1,7 +1,7 @@
 `timescale 1ns / 1ps
 
 // 无 cocotb 依赖的兜底测试只检查应用握手和双网回环连线。
-module tb_afdx_v1_smoke;
+module tb_afdx_infrastructure_smoke;
     reg clk = 0;
     reg reset_n = 0;
     reg [7:0] app_data = 0;
@@ -118,7 +118,7 @@ module tb_afdx_v1_smoke;
         if (gmii_txd_a !== 8'h55 || gmii_txd_b !== 8'hd5 ||
             !gmii_tx_en_a || !gmii_tx_en_b || gmii_tx_er_a || gmii_tx_er_b)
             $fatal(1, "SV smoke GMII loopback mismatch");
-        $display("PASS: independent AFDX V1 infrastructure smoke");
+        $display("PASS: independent AFDX infrastructure smoke");
         $finish;
     end
 

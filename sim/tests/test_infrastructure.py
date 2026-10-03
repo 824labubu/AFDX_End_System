@@ -1,4 +1,4 @@
-"""V1 夹具 smoke：接口基础设施验证，不表示协议验证通过。"""
+"""夹具 smoke：接口基础设施验证，不表示协议验证通过。"""
 
 import cocotb
 from cocotb.triggers import ClockCycles, FallingEdge, Timer

@@ -11,6 +11,7 @@ class TestConfig:
     reset_cycles: int = 5
     operation_timeout_us: int = 50
     max_stall_cycles: int = 2048
+    gmii_ifg_cycles: int = 12  # documented GMII byte-cycle profile; not AFDX BAG
 
 
 TB_ONLY_DEFAULT = TestConfig()

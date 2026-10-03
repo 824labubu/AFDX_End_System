@@ -1,4 +1,4 @@
-"""V2 Phase G: public application inputs versus independently modeled A/B TX."""
+"""TX reference smoke: public application inputs versus independently modeled A/B TX."""
 
 from pathlib import Path
 
@@ -53,11 +53,11 @@ async def run_reference_case(dut, name, transactions):
                 scoreboard.observe(network, bytes(captured.get_payload(strip_fcs=False)),
                                    timestamp_ns=float(get_sim_time(unit="ns")))
         scoreboard.finish(timestamp_ns=float(get_sim_time(unit="ns")))
-        assert tb.rx_monitor.beats_seen == 0, "RX must remain stub in V2"
-        dut._log.info("V2 REFERENCE PASS: %s matched=%s", name, scoreboard.matched_count)
+        assert tb.rx_monitor.beats_seen == 0, "RX must remain stub"
+        dut._log.info("TX REFERENCE PASS: %s matched=%s", name, scoreboard.matched_count)
     except Exception as exc:
         scoreboard.write_artifact(artifact)
-        dut._log.error("V2 failed: %s; diagnostics=%s", exc, artifact.resolve())
+        dut._log.error("TX reference failed: %s; diagnostics=%s", exc, artifact.resolve())
         raise
     finally:
         scoreboard.write_artifact(artifact)

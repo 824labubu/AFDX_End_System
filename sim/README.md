@@ -1,11 +1,11 @@
-# AFDX ES 验证环境 V1 / V2
+# AFDX ES 验证环境
 
 需求依据为仓库中实际存在的
 [`doc/verification/AFDX_Verification_Plan.md`](../doc/verification/AFDX_Verification_Plan.md)。
-用户引用的 `docs/verification/` 当前不存在；本次不移动或改写验证计划。
+用户引用的 `docs/verification/` 当前不存在；计划保留在 `doc/verification/`，按功能维护TX基线及traceability。
 
-V1 提供事务、应用流 Driver/Monitor、时钟/复位/超时、接口 assertion、
-A/B GMII BFM 和 smoke 运行入口，不提供协议 Reference Model 或 Scoreboard。
+公共基础设施提供事务、应用流 Driver/Monitor、时钟/复位/超时、接口 assertion、
+A/B GMII BFM 和 smoke 运行入口；协议检查由独立 Reference Model、Decoder 和 Scoreboard完成。
 GMII 完全复用 [cocotbext-eth](https://github.com/alexforencich/cocotbext-eth)
 的 `GmiiSource`、`GmiiSink` 和 `GmiiFrame`。
 
@@ -14,13 +14,11 @@ GMII 完全复用 [cocotbext-eth](https://github.com/alexforencich/cocotbext-eth
 接口说明见 [统一DUT接口](../doc/AFDX_End_System_Top_Interface.md)。
 `--target end-system` 运行此顶层，不把下面的基础设施回环当作真实RX。
 
-## V2 TX Reference 验证
+## TX Reference 验证
 
-执行依据：项目根目录
-[`AFDX_Verification_V2_Execution_Guide.md`](../AFDX_Verification_V2_Execution_Guide.md)，
-按 Phase A → H 实施。状态与逐项 Exit Criteria 见 [V2_STATUS.md](V2_STATUS.md)。
-V2 建立独立 TX Reference Model、Packet Decoder 和 Basic Scoreboard，
-只对当前 `AFDX_End_System_top` 进行少量 TX 基础验证，RX保持stub。
+独立 TX Reference Model、Packet Decoder 和 Basic Scoreboard通过公开应用流及GMII，
+检查当前 `AFDX_End_System_top`。状态与Feature追踪见 [STATUS.md](STATUS.md)。
+RX保持stub。
 
 ```sh
 # 无仿真器/第三方Python依赖的模型单元测试。
@@ -31,12 +29,12 @@ PYTHONPATH=sim python3 -m unittest discover -s sim/tests -p test_model_unit.py -
 # 仅运行4类DUT-vs-Reference测试。
 sim/.venv/bin/python sim/run.py --sim icarus --target tx-reference
 
-# V2完整入口：纯Pythonunits → TX Reference → V1三个目标 → 独立SV smoke。
-sim/.venv/bin/python sim/run.py --sim icarus --v2
+# 完整入口：unit tests、基础设施、TX Reference、TX Features、SV smoke和coverage。
+sim/.venv/bin/python sim/run.py --sim icarus --regression
 ```
 
-V2没有新增安装依赖；继续复用 `AppTransaction`、`AppSource/AppMonitor`、
-`AfdxTB`、cocotb和cocotbext-eth。默认不带`--v2`时仍运行原有V1目标。
+模型与checker使用标准库；仿真继续使用 `AppTransaction`、`AppSource/AppMonitor`、
+`AfdxTB`、cocotb和cocotbext-eth。默认不带`--regression`时运行基础设施、TX MAC及顶层smoke目标。
 其他仿真器沿用`--target tx-reference`入口；本机验收为Icarus，不能据此声明ModelSim通过。
 
 ### 模型、解析器与比较器
@@ -77,7 +75,7 @@ IPv4校验和先清零首部checksum字段，再计算16-bit one's-complement；
 
 `TB_ONLY_DEFAULT_MODEL_CONFIG`为测试配置，不冻结正式设备ICD或声明完整规范合规：
 
-| 配置 | V2测试值 |
+| 配置 | 测试值 |
 |---|---|
 | application port → VL | 1..5 → 1..5，显式路由表 |
 | 源IPv4 | 表中10.1.1.1..5 |
@@ -97,7 +95,8 @@ Reference输出及Decoder输入均为`DA..FCS`。
 固定版cocotbext-eth的`get_payload(strip_fcs=False)`基于SFD位置剥离前导码/SFD并保留FCS，
 不调用BFM的`check_fcs()`作为验收判据。SN是FCS前一字节，Pad位于IP数据结束与SN之间。
 UDP长度决定应用payload，IP长度决定Ethernet Pad边界，两者不一致不会被解析器自动修正。
-本阶段不验收前导码字节数或IFG；测试末尾的有限额外帧观察窗口也不是BAG/IFG checker。
+`tx-reference`目标检查DA..FCS；线上前导码和IFG由TX feature tests检查。
+测试末尾的有限额外帧观察窗口不是BAG/IFG checker。
 
 ### 失败诊断与产物
 
@@ -120,8 +119,100 @@ first_difference: byte_offset=39 expected=0x18 (24) actual=0x19 (25)
 ```
 
 DUT mismatch首先保持测试失败，保存JSON与日志，再按DUT/model/config分类定位；
-不能改Reference去匹配观察到的错误输出。V2不修改协议RTL，不扩展RX、应用peer、
+不能改Reference去匹配观察到的错误输出。不修改协议RTL，不扩展RX、应用peer、
 BAG/jitter、复杂调度器、完整fault injection或coverage closure。
+
+## TX Feature 验证
+
+当前范围与结果见 [STATUS.md](STATUS.md)。
+统一DUT为`AFDX_End_System_top`，共享应用/GMII BFM、协议模型、decoder和scoreboard。
+执行TX-F01～F06、TX-F08～F11、RED-F01/02，**TX-F07 = REMOVED**。
+
+```sh
+# 完整验收：所有units、smoke、TX Reference、TX Features、SV smoke及coverage。
+sim/.venv/bin/python sim/run.py --sim icarus --regression
+
+# 按功能运行test suite。
+sim/.venv/bin/python sim/run.py --sim icarus --suite payload
+sim/.venv/bin/python sim/run.py --sim icarus --suite headers
+sim/.venv/bin/python sim/run.py --sim icarus --suite sequence
+sim/.venv/bin/python sim/run.py --sim icarus --suite ethernet
+sim/.venv/bin/python sim/run.py --sim icarus --suite redundancy
+sim/.venv/bin/python sim/run.py --sim icarus --suite tx  # 全部TX feature tests
+
+# 纯Python单元测试，无cocotb/仿真器依赖。
+python3 sim/run.py --unit
+python3 sim/run.py --model-unit
+python3 sim/run.py --checker-unit
+
+# 从现有TX artifacts汇总coverage；完整验收重新运行--regression。
+python3 sim/run.py --sim icarus --coverage
+
+# 单目标及单case最小复现。
+sim/.venv/bin/python sim/run.py --sim icarus --target tx-sequence
+sim/.venv/bin/python sim/run.py --sim icarus --target tx-sequence --test-filter 'test_tx_f06_sequence_wrap_255_to_1$'
+```
+
+`--test-filter`要求单独`--target`。筛选运行会重新生成该目标的XML/JSON，不能代替完整验收。
+`--suite`运行对应DUT功能测试；`--unit`运行纯Python模型/checker/coverage自检。
+默认smoke入口保留。ModelSim可用相同入口，但本机Golden状态为PENDING。
+运行不创建Git提交。
+
+| Target | Feature IDs | 文件/用例数 |
+|---|---|---|
+| `tx-payload` | TX-F01 | `tests/tx/test_tx_payload.py`，4项 |
+| `tx-boundary` | TX-F01/02 | `tests/tx/test_tx_boundary.py`，3项 |
+| `tx-headers` | TX-F03/04/05 | `tests/tx/test_tx_headers.py`，3项 |
+| `tx-sequence` | TX-F06 | `tests/tx/test_tx_sequence.py`，3项 |
+| `tx-padding` | TX-F08 | `tests/tx/test_tx_padding.py`，1项 |
+| `tx-fcs` | TX-F09 | `tests/tx/test_tx_fcs.py`，1项 |
+| `tx-timing` | TX-F10/11 | `tests/tx/test_tx_timing.py`，2项 |
+| `tx-redundancy` | RED-F01/02 | `tests/tx/test_tx_redundancy.py`，2项 |
+
+### 流量、边界与时序定义
+
+- 载荷实际覆盖1/2/16/64/483/484/485/515/516/517/1471 B；Padding另覆盖16/17/18 B边界。
+- 0 B由现有`AppTransaction`接口拒绝，验证无虚构last握手及后续恢复；不声称发送了零长度DUT帧。
+- 1472 B依接口文档检查输入被消费后整包丢弃，在1600个系统周期的有限窗口内无帧，随后合法包恢复且SN不错误递增。
+- Ready仅由DUT驱动。前包使发送器忙碌时立即调用下一次发送，观察实际首字节反压；下一条1-byte消息同时覆盖last反压。
+- Back-to-back表示调用方不插入等待，保留AppSource自身的cleanup空拍；不是声称DUT可以无停顿连续接受整包。
+- `AppMonitor`继续检查`valid && ready && last`边界及反压期间data/last/port/UDP元数据稳定；`ApplicationFlowObserver`只记录实际流量。
+- Wrap通过256条真实应用消息覆盖1..255→1，不force内部SN；reset同时重置DUT与ReferenceState。
+- `GmiiWireObserver`在各路公开TX clock上升沿ReadOnly阶段记录前8字节、TX_EN帧长和起止周期，不替代`GmiiSink`。
+- 前导码检查线上`55`×7 + `D5`，不依据第三方库裁剪后的字节数推断。
+- IFG定义为上一帧最后一个TX_EN=1采样与下一帧首个TX_EN=1采样之间的低使能周期数：`next_start_cycle - previous_end_cycle - 1 >= 12`。
+  单位是各路GMII字节周期，当前TB_ONLY_DEFAULT时钟为8 ns；首帧及reset之前/之后之间不配对。
+  当前单缓存发送器实际gap大于12，此测试检查忙碌输入下的最小间隔规则，不证明恰好12周期的吞吐率。
+- IFG仅为MAC timing检查，**没有**BAG start-to-start checker、jitter model或BAG coverage。
+- A/B各自由独立配置生成完整expected并检查FCS；另外比较IP/UDP/payload/SN语义，允许配置的MAC/FCS差异，不要求同时开始。
+
+### 诊断与Functional Coverage
+
+每个目标产物位于`sim/build/<simulator>/tx-*/`：
+
+- `results.xml`：cocotb自动结果，失败/跳过/零测试均使runner非零退出。
+- `<test_name>.scoreboard.json`：复用字段和完整字节诊断，test name包含Feature ID。
+- `<test_name>.case.json`：Feature IDs、PASS/FAIL及failure文本、实际应用流事件、匹配后的帧字段和GMII观察记录。
+
+字段错误由Scoreboard输出：Feature ID、transaction ID、A/B、field、expected/actual、首差异offset。
+前导码错误额外定位prefix byte offset；IFG错误包含previous_end/next_start、observed/required GMII周期。
+完整入口在某一目标失败后继续收集其余目标结果，最终保持非零退出，不把DUT defect转成xfail或跳过。
+
+轻量收集器为`functional_coverage/tx.py`，结果位于：
+
+```text
+sim/build/<simulator>/coverage/functional_coverage.json
+sim/build/<simulator>/coverage/functional_coverage.txt
+```
+
+报告提供每bin计数、最多5条证据、缺失bins、失败cases及TX-F07 REMOVED标记。
+只有XML和Scoreboard通过的case计入覆盖，缺帧/失败不关闭bins；coverage不替代checker。
+必需87个bins覆盖feature、payload、每port/VL、flow、SN、padding、A/B和GMII，以及有限交叉：
+关键payload×实际backpressure、每port/VL×increment/reset、padding×payload、network×FCS。
+另有16/17/18、483/484/485、515/516/517的精确邻域bins，不要求完整笛卡尔积。
+
+已知DUT defect应保留稳定最小用例与JSON，在`STATUS.md`标记`BLOCKED_BY_DUT_DEFECT`；
+不通过修改expected适配实际错误。当前功能验收完成后停止，不进入RX、E2E、fault campaign或完整BAG/jitter。
 
 ## 文件组织
 
@@ -138,7 +229,7 @@ BAG/jitter、复杂调度器、完整fault injection或coverage closure。
 | `tests/test_infrastructure.py` | 公共基础设施 smoke 和异常退出自检 |
 | `tests/test_tx_mac_smoke.py` | 可选现有 `AFDX_TX_MAC` 的实际 GMII 输出 smoke |
 | `tests/test_end_system_top.py` | 统一顶层的真实TX数据/UDP端口/SN/FCS和RX预留空闲/复位检查 |
-| `smoke/tb_afdx_v1_smoke.sv` | 无 cocotb 依赖的独立比赛兜底 TB |
+| `smoke/tb_afdx_infrastructure_smoke.sv` | 无 cocotb 依赖的独立比赛兜底 TB |
 | `run.py` | ModelSim/Questa、Icarus、Verilator、VCS 的统一入口 |
 
 ## 安装与运行
@@ -231,7 +322,7 @@ SV 路径同时要求成功退出和 TB 的 PASS 标记，不能把无测试输�
 `GmiiSink` 对前导码的采样行为由第三方库定义，因此回环比较使用库提供的
 `get_payload(strip_fcs=False)`，不将本测试当作前导码/SFD 协议验收。
 旧 `tx-mac` smoke仅检查收帧和接口；`end-system`含少量定向字段检查，
-独立模型、Decoder、Scoreboard检查使用V2的`tx-reference`目标。
+独立模型、Decoder、Scoreboard检查使用`tx-reference`目标。
 
 ## 当前阻塞和验证边界
 
@@ -244,7 +335,7 @@ SV 路径同时要求成功退出和 TB 的 PASS 标记，不能把无测试输�
 3. 默认第二个目标是已有的 **可选 `AFDX_TX_MAC`**，不是将其宣布为团队指定的旧 TX 替代品。
    它的 RX 引脚是兼容占位，不实现接收协议；GMII 时钟沿用其实际 `p0_rxc` 输入。
    `rtl/afdx_mac_rx.v` 和 `rtl/afdx_mac_tx.v` 的另一套宽 AXI 接口也不是 GMII 边界，
-   V1 不新增 MAC/PCS 或协议适配 RTL。
+    不新增 MAC/PCS 或协议适配 RTL。
 4. 本机没有 `vlib/vlog/vsim`，ModelSim 入口已提供但运行验收被工具缺失阻塞。
    不能将 Linux PASS 写成 Golden Simulator PASS。
 5. 本机 Verilator 为 5.008，与固定的 cocotb 2.0.1 不兼容，构建缺少
@@ -254,6 +345,6 @@ SV 路径同时要求成功退出和 TB 的 PASS 标记，不能把无测试输�
 
 所有测试数值配置均为 `TB_ONLY_DEFAULT`，未冻结正式Port/VL/IP/MAC/BAG或系统时钟。
 统一顶层TX/RX流接口契约已定义，真实RX实现仍待完成。
-V2已提供基本TX Reference Model、packet decoder、CRC/IP checksum及字段Scoreboard；
-仍未实现BAG/jitter、完整SN/VL系统回归、应用peer、完整fault injection、
-functional coverage或完整系统scoreboard。
+已提供基本TX Reference Model、packet decoder、CRC/IP checksum及字段Scoreboard；
+已完成当前TX profile的SN/VL、GMII时序、双网feature回归及轻量functional coverage。
+仍未实现完整BAG/jitter、应用peer、RX、完整fault injection或完整系统scoreboard。
