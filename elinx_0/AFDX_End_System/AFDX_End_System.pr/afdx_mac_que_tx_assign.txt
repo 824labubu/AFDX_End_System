@@ -1,0 +1,13 @@
+tx_busy,state,ST_IDLE
+input_vl_index,tx_vl_index,QUE_VL0_INDEX,tx_vl_index
+input_vl_valid,input_vl_index,QUE_VL0_INDEX,input_vl_index,QUE_VL1_INDEX
+input_vl_slot,input_vl_index,QUE_VL1_INDEX
+,reset,bag_timer
+,reset,bag_timer
+input_fire,tx_valid,tx_ready
+payload_write_enable,input_fire,state,ST_IDLE,tx_sop,state,ST_CAPTURE,!tx_sop,payload_len,MAX_PAYLOAD_BYTES
+payload_write_addr,state,ST_IDLE,payload_len
+p0_gtxc_a,p0_txc_a
+p0_gtxc_b,p0_txc_b
+phy_rstb0_a,reset
+phy_rstb0_b,reset

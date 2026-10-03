@@ -1,0 +1,1 @@
+crc_after_data,start,CRC_INIT,crc_reg,data,!reset,~crc_after_data
