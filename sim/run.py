@@ -31,6 +31,13 @@ def sources_for(target):
             LEGACY_DIR / "afdx_mac_tx.v",
             LEGACY_DIR / "afdx_gmii_tx.v",
         ], "test_tx_mac_smoke", {"BAG_CYCLES": 16}
+    if target == "end-system":
+        return "AFDX_End_System_top", [
+            LEGACY_DIR / "AFDX_End_System_top.v",
+            LEGACY_DIR / "AFDX_TX_MAC.v",
+            LEGACY_DIR / "afdx_mac_tx.v",
+            LEGACY_DIR / "afdx_gmii_tx.v",
+        ], "test_end_system_top", {"BAG_CYCLES": 16}  # TB_ONLY_DEFAULT
     return "AFDX_TX", [LEGACY_DIR / "AFDX_TX.v"], None, {}
 
 
@@ -147,7 +154,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sim", choices=("modelsim", "questa", "icarus", "verilator", "vcs"),
                         default="icarus")
-    parser.add_argument("--target", choices=("infrastructure", "tx-mac", "legacy-tx"))
+    parser.add_argument("--target", choices=("infrastructure", "tx-mac", "end-system", "legacy-tx"))
     parser.add_argument("--sv-smoke", action="store_true")
     parser.add_argument("--waves", action="store_true")
     parser.add_argument("--wall-timeout", type=int, default=180)
@@ -161,7 +168,7 @@ def main():
         elif args.worker:
             worker(args)
         else:
-            targets = [args.target] if args.target else ["infrastructure", "tx-mac"]
+            targets = [args.target] if args.target else ["infrastructure", "tx-mac", "end-system"]
             for target in targets:
                 command = [sys.executable, str(Path(__file__).resolve()), "--worker",
                            "--sim", args.sim, "--target", target]

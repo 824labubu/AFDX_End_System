@@ -55,9 +55,24 @@ TX_MAC_GMII = {
 }
 
 
+# Canonical AFDX_End_System_top interface; legacy mappings remain available.
+END_SYSTEM_TX = {
+    "data": "app_tx_data", "valid": "app_tx_valid", "ready": "app_tx_ready",
+    "last": "app_tx_last", "src_udp": "app_tx_src_udp",
+    "dst_udp": "app_tx_dst_udp", "application_port": "app_tx_port",
+}
+END_SYSTEM_RX = {
+    "data": "app_rx_data", "valid": "app_rx_valid", "ready": "app_rx_ready",
+    "last": "app_rx_last", "src_udp": "app_rx_src_udp",
+    "dst_udp": "app_rx_dst_udp", "application_port": "app_rx_port",
+}
+END_SYSTEM_GMII = dict(HARNESS_GMII)
+
+
 class AfdxTB:
     def __init__(self, dut, app_names=None, gmii_names=None, reset_name="reset_n",
-                 clock_name="clk", config=TB_ONLY_DEFAULT, reset_active_level=0):
+                 clock_name="clk", config=TB_ONLY_DEFAULT, reset_active_level=0,
+                 rx_names=None):
         self.dut = dut
         self.config = config
         self.clock = getattr(dut, clock_name)
@@ -70,6 +85,11 @@ class AfdxTB:
                              config.max_stall_cycles)
         self.app_monitor = AppMonitor(self.stream, self.clock, self.reset,
                                       reset_active_level=reset_active_level)
+        self.rx_stream = StreamSignals.bind(dut, rx_names) if rx_names is not None else None
+        self.rx_monitor = AppMonitor(
+            self.rx_stream, self.clock, self.reset, "application RX",
+            reset_active_level=reset_active_level,
+        ) if self.rx_stream is not None else None
         self.gmii_rx = {}
         self.gmii_tx = {}
         self.gmii_names = HARNESS_GMII if gmii_names is None else gmii_names
@@ -111,6 +131,12 @@ class AfdxTB:
         return await bounded(self.app_monitor.recv(), self.config.operation_timeout_us,
                              "application accepted transaction")
 
+    async def recv_app_rx(self):
+        if self.rx_monitor is None:
+            raise ValueError("application RX signals were not bound; provide rx_names")
+        return await bounded(self.rx_monitor.recv(), self.config.operation_timeout_us,
+                             "application RX transaction")
+
     async def inject_gmii(self, network, frame):
         await bounded(self.gmii_rx[network].send(frame), self.config.operation_timeout_us,
                       f"GMII {network.upper()} enqueue")
@@ -123,6 +149,8 @@ class AfdxTB:
 
     def close(self):
         self.app_monitor.close()
+        if self.rx_monitor is not None:
+            self.rx_monitor.close()
         # 本地复位停止第三方 BFM，后续外部复位不会重启已关闭的实例。
         for bfm in (*self.gmii_rx.values(), *self.gmii_tx.values()):
             bfm.assert_reset(True)

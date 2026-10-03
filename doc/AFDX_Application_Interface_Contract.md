@@ -19,3 +19,13 @@
 | 3 | 1 | 1 | DN | 1 | 接收末字节并结束消息 |
 
 正式端口/VL、MIB、RTC 与文件容量的 TBD 项在最终系统集成前仍需人工冻结。
+
+## 统一下层 DUT 接口（2026-10-03）
+
+`AFDX_End_System_top` 提供 `app_tx_*` 和对称的 `app_rx_*`
+data/valid/ready/last/port/src_udp/dst_udp 接口。信号方向、应用模块接线和cocotb映射见
+[统一DUT接口](AFDX_End_System_Top_Interface.md)。
+
+下层 RX 的 ready 契约现已明确：应用/BFM驱动 `app_rx_ready`，下层在反压时保持
+valid/data/last/元信息。本次只预留 RX 端口；真实RX尚未实现。
+现有 `app_layer_top` 尚无RX ready输出，接真实RX前仍需实现应用接收流控或缓冲适配。

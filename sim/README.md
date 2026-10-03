@@ -9,6 +9,11 @@ A/B GMII BFM 和 smoke 运行入口，不提供协议 Reference Model 或 Scoreb
 GMII 完全复用 [cocotbext-eth](https://github.com/alexforencich/cocotbext-eth)
 的 `GmiiSource`、`GmiiSink` 和 `GmiiFrame`。
 
+2026-10-03 新增统一 DUT：`AFDX_End_System_top`，应用侧为对称的
+`app_tx_*` / `app_rx_*`，网络侧为双路 `gmii_*`。实际TX已连接，RX暂时保持空闲。
+接口说明见 [统一DUT接口](../doc/AFDX_End_System_Top_Interface.md)。
+`--target end-system` 运行此顶层，不把下面的基础设施回环当作真实RX。
+
 ## 文件组织
 
 | 文件 | 用途 |
@@ -23,6 +28,7 @@ GMII 完全复用 [cocotbext-eth](https://github.com/alexforencich/cocotbext-eth
 | `fixtures/afdx_infrastructure_harness.sv` | 真实应用仲裁器和独立 A/B GMII 一拍回环夹具 |
 | `tests/test_infrastructure.py` | 公共基础设施 smoke 和异常退出自检 |
 | `tests/test_tx_mac_smoke.py` | 可选现有 `AFDX_TX_MAC` 的实际 GMII 输出 smoke |
+| `tests/test_end_system_top.py` | 统一顶层的真实TX数据/UDP端口/SN/FCS和RX预留空闲/复位检查 |
 | `smoke/tb_afdx_v1_smoke.sv` | 无 cocotb 依赖的独立比赛兜底 TB |
 | `run.py` | ModelSim/Questa、Icarus、Verilator、VCS 的统一入口 |
 
@@ -34,7 +40,7 @@ GMII 完全复用 [cocotbext-eth](https://github.com/alexforencich/cocotbext-eth
 python3 -m venv sim/.venv
 sim/.venv/bin/python -m pip install -r sim/requirements.txt
 
-# Linux：同一套 cocotb tests，默认依次运行两个目标。
+# Linux：默认依次运行 infrastructure、tx-mac、end-system 三个目标。
 sim/.venv/bin/python sim/run.py --sim icarus
 sim/.venv/bin/python sim/run.py --sim verilator  # 需要 Verilator >= 5.036
 
@@ -44,6 +50,7 @@ sim/.venv/bin/python sim/run.py --sim modelsim
 # 单独运行公共夹具，或独立查看可选 TX MAC。
 sim/.venv/bin/python sim/run.py --sim icarus --target infrastructure
 sim/.venv/bin/python sim/run.py --sim icarus --target tx-mac
+sim/.venv/bin/python sim/run.py --sim icarus --target end-system
 
 # 不依赖 cocotb 或 cocotbext-eth 的 SV 兜底。
 python3 sim/run.py --sim icarus --sv-smoke
@@ -89,7 +96,9 @@ Python 中 X/Z 转整数失败也会直接使测试失败。
 `AfdxTB` 默认绑定 `app_*` 和 `gmii_*` 接口；不同 DUT 用 `app_names`、
 `gmii_names`、`clock_name`、`reset_name`、`reset_active_level` 显式适配。
 缺少信号或位宽不符立即失败。`gmii_names={}` 可禁用网络 BFM，供应用级测试使用。
-未来 RX ready 未冻结，当前没有通过假造 ready 将真实 RX 接到 APP。
+统一顶层用 `END_SYSTEM_TX`、`END_SYSTEM_RX`、`END_SYSTEM_GMII` 映射；
+通过 `rx_names=END_SYSTEM_RX` 绑定可选RX monitor，使用者驱动 `app_rx_ready`。
+`recv_app()` 收集已接受TX输入；`recv_app_rx()` 等待RX输出，当前RX未实现时会超时。
 
 ## 测试及结果判定
 
@@ -100,6 +109,8 @@ Python 中 X/Z 转整数失败也会直接使测试失败。
 | `reset_and_timeout_smoke` | 永久反压超时、在途复位中止、复位后恢复、缺失 GMII 帧超时 |
 | `assertion_and_transaction_guards` | 非法事务拒绝和 assertion 失败路径 |
 | `tx_mac_app_to_ab_gmii` | 接收三条应用事务，A/B 各捕获三个真实 TX MAC 帧，无 TX_ER |
+| `application_tx_to_ab_gmii` | 统一顶层TX至双网，UDP元信息、载荷、SN、长度、CRC和上游反压 |
+| `rx_reserved_idle_and_reset` | RX预留端口绑定，GMII注入仍无应用事务，双向接口/PHY复位 |
 | 独立 SV smoke | 首/末字节反压、四个字节及元信息、A/B 回环连线 |
 
 每项 cocotb 测试有仿真时间上限；公共操作另有有界等待。
@@ -117,9 +128,9 @@ SV 路径同时要求成功退出和 TB 的 PASS 标记，不能把无测试输�
 1. 团队指定的旧 `AFDX_TX.v` 第 24 行多余 `+` 仍导致编译失败。
    文件内部还有未完成内容；其 GMII 输出与整包 last 联调尚不能验收。
    `legacy-tx` 入口保留该阻塞的可重复诊断，不修改下层 RTL。
-2. `AFDX_End_System_top.v` 没有实例化实际收发链路，`rtl/afdx_rx` 为空。
-   真实 GMII RX → UDP Payload → APP 的适配和缓存/ready 契约尚未提供。
-   RX 注入通过夹具验证，不能宣称真实 RX 已处理帧。
+2. `AFDX_End_System_top.v` 已连接实际TX，`rtl/afdx_rx` 仍为空。
+   顶层RX应用流ready契约已定义，但真实 GMII RX → UDP Payload → APP
+   的解码、缓存与应用适配尚未实现。RX预留空闲检查不能证明处理了帧。
 3. 默认第二个目标是已有的 **可选 `AFDX_TX_MAC`**，不是将其宣布为团队指定的旧 TX 替代品。
    它的 RX 引脚是兼容占位，不实现接收协议；GMII 时钟沿用其实际 `p0_rxc` 输入。
    `rtl/afdx_mac_rx.v` 和 `rtl/afdx_mac_tx.v` 的另一套宽 AXI 接口也不是 GMII 边界，
@@ -131,6 +142,8 @@ SV 路径同时要求成功退出和 TB 的 PASS 标记，不能把无测试输�
    [cocotb 2.0 官方要求 Verilator 5.036 或更新版本](https://docs.cocotb.org/en/v2.0.0/simulator_support.html#verilator)。
    Linux 实际验收采用已通过的 Icarus 11.0，没有为此改装系统仿真器。
 
-所有测试配置均为 `TB_ONLY_DEFAULT`，未冻结 Port/VL/IP/MAC/BAG、RX 契约或系统时钟。
-本阶段没有实现协议模型、packet decoder、CRC/IP checksum checker、BAG/jitter、
-SN/VL checker、应用 peer、完整 fault injection、functional coverage 或完整 scoreboard。
+所有测试数值配置均为 `TB_ONLY_DEFAULT`，未冻结正式Port/VL/IP/MAC/BAG或系统时钟。
+统一顶层TX/RX流接口契约已定义，真实RX实现仍待完成。
+统一顶层追加了少量帧字段和CRC定向检查；仍未实现完整协议模型、packet decoder、
+IP checksum checker、BAG/jitter、SN/VL checker、应用 peer、完整 fault injection、
+functional coverage 或完整 scoreboard。
